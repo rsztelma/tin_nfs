@@ -6,9 +6,16 @@ std::map<char *, int> mynfs_socket_descriptor;
 
 int mynfs_open(char *host, char *path, int oflag, int mode)
 {
+
     int mynfs_socket;
     auto open_file_check = mynfs_open_count.find(host);
-    if ((open_file_check == mynfs_open_count.end()) || (open_file_check->second <= 0))
+    if((open_file_check != mynfs_open_count.end()) && (open_file_check->second >= 10))
+        {
+			mynfs_error = -8;
+			return -1;
+		}
+
+	if ((open_file_check == mynfs_open_count.end()) || (open_file_check->second <= 0))
     {
         mynfs_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if (mynfs_socket == -1)
@@ -51,6 +58,7 @@ int mynfs_open(char *host, char *path, int oflag, int mode)
     memcpy(buffer + sizeof(uint8_t) + sizeof(mynfs_request.path_length) + sizeof(mynfs_request.oflag), &mynfs_request.mode, sizeof(mynfs_request.mode));
     memcpy(buffer + sizeof(uint8_t) + sizeof(mynfs_request.path_length) + sizeof(mynfs_request.oflag) + sizeof(mynfs_request.mode), path, sizeof(char) * (strlen(path) + 1));
 
+
     ssize_t result = write(mynfs_socket, buffer, sizeof(uint8_t) + sizeof(mynfs_request.path_length) + sizeof(mynfs_request.oflag) + sizeof(mynfs_request.mode) + sizeof(char) * (strlen(path) + 1));
     free(buffer);
 	if (result == -1)
@@ -66,6 +74,7 @@ int mynfs_open(char *host, char *path, int oflag, int mode)
     struct mynfs_open_response response;
 
     result = read(mynfs_socket, &response.return_value, sizeof(int32_t));
+
     if (result == 0)
     {
         close(mynfs_socket);
@@ -86,14 +95,19 @@ int mynfs_open(char *host, char *path, int oflag, int mode)
 
     if (response.return_value <= 0)
     {
-        if (response.return_value == 0)
+        if (response.return_value == 0 && (open_file_check == mynfs_open_count.end()) || (open_file_check->second <= 0))
         {
             mynfs_error = -5;
             close(mynfs_socket);
             mynfs_socket_descriptor[host] = -1;
             return -1;
         }
-        else
+        else if(response.return_value == 0)
+            {
+				mynfs_error = -8;
+				return -1;
+			}
+		else
         {
             mynfs_error = (-1) * response.return_value;
             if ((open_file_check == mynfs_open_count.end()) || (open_file_check->second <= 0))
@@ -115,7 +129,7 @@ int mynfs_open(char *host, char *path, int oflag, int mode)
         mynfs_open_count[host] = mynfs_open_count[host] + 1;
     }
 
-    return response.return_value;
+	return response.return_value;
 }
 
 int mynfs_read(char *host, int fds, void *buf, int count)
@@ -201,7 +215,9 @@ int mynfs_read(char *host, int fds, void *buf, int count)
 
 int mynfs_write(char *host, int fds, void *buf, int count)
 {
-    int mynfs_socket;
+
+
+	int mynfs_socket;
     auto open_file_check = mynfs_open_count.find(host);
     if ((open_file_check == mynfs_open_count.end()) || (open_file_check->second <= 0))
     {
@@ -213,7 +229,7 @@ int mynfs_write(char *host, int fds, void *buf, int count)
 
     struct mynfs_write_request mynfs_request;
     mynfs_request.file_descriptor = fds;
-    mynfs_request.data_size = count;
+    mynfs_request.data_size = static_cast<int16_t>(count);
 
     uint8_t function_code = 3;
     uint8_t *function_type = &function_code;
@@ -223,13 +239,15 @@ int mynfs_write(char *host, int fds, void *buf, int count)
     memcpy(buffer + sizeof(uint8_t) + sizeof(mynfs_request.file_descriptor), &mynfs_request.data_size, sizeof(mynfs_request.data_size));
     memcpy(buffer + sizeof(uint8_t) + sizeof(mynfs_request.file_descriptor) + sizeof(mynfs_request.data_size), buf, sizeof(char) * mynfs_request.data_size);
 
-    ssize_t result = write(mynfs_socket, buffer, sizeof(uint8_t) + sizeof(mynfs_request.file_descriptor) + sizeof(mynfs_request.data_size) + sizeof(char) * mynfs_request.data_size);
+
+	ssize_t result = write(mynfs_socket, buffer, sizeof(uint8_t) + sizeof(mynfs_request.file_descriptor) + sizeof(mynfs_request.data_size) + sizeof(char) * mynfs_request.data_size);
     free(buffer);
     if (result == -1)
     {
         mynfs_error = -3;
         return -1;
     }
+
 
     struct mynfs_write_response response;
     result = read(mynfs_socket, &response.return_value, sizeof(int16_t));
@@ -492,7 +510,7 @@ int mynfs_fstat(char *host, int fds, struct stat *buf)
         mynfs_error = -3;
         return -1;
     }
-    struct mynfs_read_response response;
+    struct mynfs_fstat_response response;
     result = read(mynfs_socket, &response.return_value, sizeof(int16_t));
     if (result == 0)
     {
@@ -513,6 +531,7 @@ int mynfs_fstat(char *host, int fds, struct stat *buf)
     }
 
     result = read(mynfs_socket, buf, sizeof(struct stat));
+
     if (result == 0)
     {
         close(mynfs_socket);
@@ -524,6 +543,5 @@ int mynfs_fstat(char *host, int fds, struct stat *buf)
         mynfs_error = -4;
         return -1;
     }
-
     return 0;
 }

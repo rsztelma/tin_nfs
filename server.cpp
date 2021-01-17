@@ -3,17 +3,155 @@
 #include <vector>
 #include <fstream>
 #include <algorithm>
+#include <unordered_map>
+#include <utility>
+
+class DescriptorStorage
+{
+public:
+    int table[10][2];
+    DescriptorStorage();
+    void remove_element(int client_value);
+    int element_count();
+    int insert_element(int client_value, int server_value);
+    int find_element(int client_descriptor);
+    void close_all_elements();
+    int next_free_descriptor();
+};
+
+DescriptorStorage::DescriptorStorage()
+{
+    int n;
+    n = 0;
+    while (n < 10)
+    {
+        table[n][0] = -1;
+        table[n][1] = -1;
+        n++;
+    }
+};
+
+void DescriptorStorage::remove_element(int client_value)
+{
+    int n;
+    n = 0;
+    while (table[n][0] != client_value)
+    {
+        n++;
+    }
+
+    while (n < 9)
+    {
+        table[n][0] = table[n + 1][0];
+        table[n][1] = table[n + 1][1];
+        n++;
+    }
+    table[9][0] = -1;
+    table[9][1] = -1;
+};
+
+int DescriptorStorage::element_count()
+{
+    int n, elem_count;
+    n = 0;
+    elem_count = 0;
+    while (n < 10)
+    {
+        if (table[n][0] > 0 && table[n][1] > 0)
+            elem_count++;
+        n++;
+    }
+    return elem_count;
+};
+
+int DescriptorStorage::insert_element(int client_value, int server_value)
+{
+    int n;
+    n = 0;
+    if (this->element_count() == 10)
+        return -1;
+    while ( (table[n][0] > 0) && (table[n][1] > 0) && (n<10))
+        {
+        n++;
+        }
+    if (n >= 10)
+        return -1;
+    table[n][0] = client_value;
+    table[n][1] = server_value;
+    return n;
+};
+
+int DescriptorStorage::find_element(int client_descriptor)
+{
+    int n;
+    n = 0;
+    while (n < 10)
+    {
+        if (table[n][0] == client_descriptor)
+            break;
+        n++;
+    }
+
+    if (n == 10)
+        return -1;
+    else
+        return table[n][1];
+};
+
+void DescriptorStorage::close_all_elements()
+{
+    int n;
+    n = 0;
+    while (n < 10)
+    {
+        if (table[n][0] > 0 && table[n][1] > 0)
+        {
+            flock(table[n][1], LOCK_UN);
+            close(table[n][1]);
+        }
+        n++;
+    }
+};
+
+int DescriptorStorage::next_free_descriptor()
+{
+    bool candidates[10];
+    int n;
+    n = 0;
+    while (n < 10)
+    {
+        candidates[n] = true;
+        n++;
+    }
+    n = 0;
+    while (n < 10)
+    {
+        if (table[n][0] > 0)
+            candidates[table[n][0] - 1] = false;
+        n++;
+    }
+    n = 0;
+    while (n < 10 && candidates[n] == false)
+    {
+        n++;
+    }
+
+    if (n == 10)
+        return -1;
+    else
+        return n + 1;
+};
 
 void new_process(int fds);
-bool handle_open(int socket, std::map<int, int> *descriptors);
-bool handle_read(int socket, std::map<int, int> *descriptors);
-bool handle_write(int socket, std::map<int, int> *descriptors);
-bool handle_lseek(int socket, std::map<int, int> *descriptors);
-bool handle_close(int socket, std::map<int, int> *descriptors);
-bool handle_unlink(int socket, std::map<int, int> *descriptors);
-bool handle_fstat(int socket, std::map<int, int> *descriptors);
+bool handle_open(int socket, DescriptorStorage *descriptors);
+bool handle_read(int socket, DescriptorStorage *descriptors);
+bool handle_write(int socket, DescriptorStorage *descriptors);
+bool handle_lseek(int socket, DescriptorStorage *descriptors);
+bool handle_close(int socket, DescriptorStorage *descriptors);
+bool handle_unlink(int socket, DescriptorStorage *descriptors);
+bool handle_fstat(int socket, DescriptorStorage *descriptors);
 void send_error_response(int error_code, int socket);
-void close_all(std::map<int, int> *descriptors);
+void close_all(DescriptorStorage *descriptor_list);
 
 int main()
 {
@@ -27,21 +165,18 @@ int main()
     my_address.sin_family = AF_INET;
     my_address.sin_port = MYNFS_PORT_NUMBER;
     my_address.sin_addr.s_addr = INADDR_ANY;
-
     ssize_t result = bind(my_socket, (struct sockaddr *)&my_address, sizeof(my_address));
     if (result == -1)
     {
         std::cerr << "Socket bind failed";
         return -1;
     }
-
     result = listen(my_socket, 50);
     if (result == -1)
     {
         std::cerr << "Socket listen failed";
         return -1;
     }
-
     int socket_descriptor;
     struct sockaddr new_address;
     socklen_t sock_len = sizeof(new_address);
@@ -61,16 +196,14 @@ int main()
         {
             std::cerr << "Accept connection failed";
         }
-        
         struct sockaddr_in *addrr = (struct sockaddr_in *)&new_address;
-		adr = (std::string)inet_ntoa(addrr->sin_addr);
-        if(std::find(whitelist.begin(), whitelist.end(), adr) == whitelist.end())
+        (std::string) inet_ntoa(addrr->sin_addr);
+        if (std::find(whitelist.begin(), whitelist.end(), adr) == whitelist.end())
         {
             send_error_response(0, socket_descriptor);
             close(socket_descriptor);
             continue;
         }
-        
 
         pid_t pid = fork();
         if (pid == -1)
@@ -84,7 +217,9 @@ int main()
 
 void new_process(int socket)
 {
-    std::map<int, int> descriptors;
+    //std::map<int, int> descriptors;
+    //std::unordered_map<int, int> lol;
+    DescriptorStorage descriptors;
     uint8_t function_id;
     bool loop = false;
 
@@ -143,8 +278,35 @@ void new_process(int socket)
     exit(0);
 }
 
-bool handle_open(int socket, std::map<int, int> *descriptors)
+bool handle_open(int socket, DescriptorStorage *descriptors)
 {
+    if (descriptors->element_count() > 10)
+        {
+        char *buffer = (char *)malloc(sizeof(int16_t));
+        ssize_t result = read(socket, buffer, sizeof(int16_t));
+         if (result == 0)
+            {
+            close_all(descriptors);
+            return true;
+            }
+        else if (result == -1)
+            {
+            std::cerr << "Internal error " << errno;
+            close_all(descriptors);
+            return true;
+            }
+        struct mynfs_open_request request;
+        memcpy(&request.path_length, buffer, sizeof(int16_t));
+        result = read(socket, buffer, sizeof(int16_t));
+        result = read(socket, buffer, sizeof(int16_t));
+		free(buffer);;
+		buffer = (char *)malloc(request.path_length);
+		result = read(socket, buffer, request.path_length);
+		free(buffer);
+		send_error_response(0, socket);
+		return false;
+		}
+
     char *buffer = (char *)malloc(sizeof(int16_t));
     ssize_t result = read(socket, buffer, sizeof(int16_t));
     if (result == 0)
@@ -189,6 +351,7 @@ bool handle_open(int socket, std::map<int, int> *descriptors)
     free(buffer);
     buffer = (char *)malloc(request.path_length);
     result = read(socket, buffer, request.path_length);
+
     if (result == 0)
     {
         close_all(descriptors);
@@ -200,30 +363,14 @@ bool handle_open(int socket, std::map<int, int> *descriptors)
         close_all(descriptors);
         return true;
     }
+    request.path = (char *)malloc(request.path_length);
     memcpy(request.path, buffer, request.path_length);
     free(buffer);
     int file_descr = open(request.path, request.oflag, request.mode);
     if (file_descr == -1)
     {
         send_error_response(errno, socket);
-        if ((*descriptors).empty())
-        {
-            return true;
-        }
-        else
-        {
-            return false;
-        }
-    }
-    if (((request.mode & O_WRONLY) != 0) || ((request.mode & O_RDWR) != 0))
-        result = flock(file_descr, LOCK_EX);
-    else if ((request.mode & O_RDONLY) != 0)
-        result = flock(file_descr, LOCK_SH);
-    else
-    {
-        close(file_descr);
-        std::cerr << "Unsupported open mode";
-        if ((*descriptors).empty())
+        if (descriptors->element_count() == 0)
         {
             return true;
         }
@@ -233,10 +380,29 @@ bool handle_open(int socket, std::map<int, int> *descriptors)
         }
     }
 
+    if (((request.mode & O_WRONLY) != 0) || ((request.mode & O_RDWR) != 0))
+        result = flock(file_descr, LOCK_EX);
+    else if ((request.mode & O_RDONLY) != 0)
+        result = flock(file_descr, LOCK_SH);
+    else
+    {
+        close(file_descr);
+        std::cerr << "Unsupported open mode";
+        if (descriptors->element_count() == 0)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+
     if (result == -1)
     {
         send_error_response(errno, socket);
-        if ((*descriptors).empty())
+        if (descriptors->element_count() == 0)
         {
             return true;
         }
@@ -246,21 +412,25 @@ bool handle_open(int socket, std::map<int, int> *descriptors)
         }
     }
     int32_t ret_val;
-    if ((*descriptors).empty())
+    if (descriptors->element_count() < 10)
     {
-        ret_val = 1;
-        (*descriptors)[ret_val] = file_descr;
+        ret_val = descriptors->next_free_descriptor();
+		descriptors->insert_element(ret_val, file_descr);
     }
     else
     {
-        ret_val = (*descriptors).rbegin()->first + 1;
-        (*descriptors)[ret_val] = file_descr;
+        send_error_response(0, socket);
+        close(file_descr);
+        return false;
     }
     struct mynfs_open_response response;
     response.return_value = ret_val;
+
     buffer = (char *)malloc(sizeof(int32_t));
     memcpy(buffer, &response.return_value, sizeof(int32_t));
+
     result = write(socket, buffer, sizeof(int32_t));
+
     free(buffer);
     if (result == 0)
     {
@@ -276,7 +446,7 @@ bool handle_open(int socket, std::map<int, int> *descriptors)
     return false;
 }
 
-bool handle_read(int socket, std::map<int, int> *descriptors)
+bool handle_read(int socket, DescriptorStorage *descriptors)
 {
     char *buffer = (char *)malloc(sizeof(int32_t));
     ssize_t result = read(socket, buffer, sizeof(int32_t));
@@ -296,6 +466,7 @@ bool handle_read(int socket, std::map<int, int> *descriptors)
     free(buffer);
     buffer = (char *)malloc(sizeof(int16_t));
     result = read(socket, buffer, sizeof(int16_t));
+
     if (result == 0)
     {
         close_all(descriptors);
@@ -311,17 +482,19 @@ bool handle_read(int socket, std::map<int, int> *descriptors)
     free(buffer);
     struct mynfs_read_response response;
     void *buf = malloc(request.data_size);
-    auto descr_check = (*descriptors).find(request.file_descriptor);
-    if (descr_check != (*descriptors).end())
-    {
-        int file_descr = (*descriptors).find(request.file_descriptor)->second;
-        result = read(file_descr, buf, request.data_size);
-    }
-    else
-    {
+
+    int file_descr;
+	file_descr = descriptors->find_element(request.file_descriptor);
+	if (file_descr == -1)
+	{
         send_error_response(errno, socket);
         return false;
     }
+    else
+    {
+        result = read(file_descr, buf, request.data_size);
+    }
+
     if (result == -1)
     {
         send_error_response(errno, socket);
@@ -373,10 +546,10 @@ bool handle_read(int socket, std::map<int, int> *descriptors)
     return false;
 }
 
-bool handle_write(int socket, std::map<int, int> *descriptors)
+bool handle_write(int socket, DescriptorStorage *descriptors)
 {
-	char *buffer;
-	struct mynfs_write_request request;
+    char *buffer;
+    struct mynfs_write_request request;
     ssize_t result = read(socket, &request.file_descriptor, sizeof(int32_t));
     if (result == 0)
     {
@@ -402,7 +575,7 @@ bool handle_write(int socket, std::map<int, int> *descriptors)
         return true;
     }
     request.data = (char *)malloc(request.data_size);
-    result = read(socket, &request.data, request.data_size);
+    result = read(socket, request.data, request.data_size);
     if (result == 0)
     {
         close_all(descriptors);
@@ -416,17 +589,20 @@ bool handle_write(int socket, std::map<int, int> *descriptors)
     }
 
     struct mynfs_write_response response;
-    auto descr_check = (*descriptors).find(request.file_descriptor);
-    if (descr_check != (*descriptors).end())
-    {
-        int file_descr = (*descriptors).find(request.file_descriptor)->second;
-        result = write(file_descr, &request.data, request.data_size);
-    }
-    else
+
+    int file_descr;
+	file_descr = descriptors->find_element(request.file_descriptor);
+    if (file_descr == -1)
     {
         send_error_response(EBADF, socket);
         return false;
     }
+    else
+    {
+        result = write(file_descr, request.data, request.data_size);
+    }
+
+
     if (result == -1)
     {
 
@@ -452,7 +628,7 @@ bool handle_write(int socket, std::map<int, int> *descriptors)
     return false;
 }
 
-bool handle_lseek(int socket, std::map<int, int> *descriptors)
+bool handle_lseek(int socket, DescriptorStorage *descriptors)
 {
     char *buffer = (char *)malloc(sizeof(int32_t));
     ssize_t result = read(socket, buffer, sizeof(int32_t));
@@ -499,17 +675,19 @@ bool handle_lseek(int socket, std::map<int, int> *descriptors)
     memcpy(&request.whence, buffer, sizeof(int16_t));
     free(buffer);
     struct mynfs_lseek_response response;
-    auto descr_check = (*descriptors).find(request.file_descriptor);
-    if (descr_check != (*descriptors).end())
-    {
-        int file_descr = (*descriptors).find(request.file_descriptor)->second;
-        result = lseek(file_descr, request.offset, request.whence);
-    }
-    else
+    
+    int file_descr;
+	file_descr = descriptors->find_element(request.file_descriptor);
+    if (file_descr == -1)
     {
         send_error_response(EBADF, socket);
         return false;
     }
+    else
+    {
+        result = lseek(file_descr, request.offset, request.whence);
+    }
+
     if (result == -1)
     {
 
@@ -535,7 +713,7 @@ bool handle_lseek(int socket, std::map<int, int> *descriptors)
     return false;
 }
 
-bool handle_close(int socket, std::map<int, int> *descriptors)
+bool handle_close(int socket, DescriptorStorage *descriptors)
 {
     char *buffer = (char *)malloc(sizeof(int32_t));
     ssize_t result = read(socket, buffer, sizeof(int32_t));
@@ -554,18 +732,21 @@ bool handle_close(int socket, std::map<int, int> *descriptors)
     memcpy(&request.file_descriptor, buffer, sizeof(int32_t));
     free(buffer);
     struct mynfs_close_response response;
-    auto descr_check = (*descriptors).find(request.file_descriptor);
-    if (descr_check != (*descriptors).end())
-    {
-        int file_descr = (*descriptors).find(request.file_descriptor)->second;
-        result = close(file_descr);
-    }
-    else
+
+    int file_descr;
+	file_descr = descriptors->find_element(request.file_descriptor);
+    if (file_descr == -1)
     {
         send_error_response(EBADF, socket);
         return false;
     }
-    if (result == -1)
+    else
+    {
+        result = close(file_descr);
+        descriptors->remove_element(request.file_descriptor);
+	}
+
+	if (result == -1)
     {
         send_error_response(errno, socket);
         return false;
@@ -589,7 +770,7 @@ bool handle_close(int socket, std::map<int, int> *descriptors)
     return false;
 }
 
-bool handle_unlink(int socket, std::map<int, int> *descriptors)
+bool handle_unlink(int socket, DescriptorStorage *descriptors)
 {
     char *buffer = (char *)malloc(sizeof(int16_t));
     ssize_t result = read(socket, buffer, sizeof(int16_t));
@@ -627,7 +808,7 @@ bool handle_unlink(int socket, std::map<int, int> *descriptors)
     if (result == -1)
     {
         send_error_response(errno, socket);
-        if ((*descriptors).empty())
+        if (descriptors->element_count() == 0)
         {
             return true;
         }
@@ -656,7 +837,7 @@ bool handle_unlink(int socket, std::map<int, int> *descriptors)
     return false;
 }
 
-bool handle_fstat(int socket, std::map<int, int> *descriptors)
+bool handle_fstat(int socket, DescriptorStorage *descriptors)
 {
     char *buffer = (char *)malloc(sizeof(int32_t));
     ssize_t result = read(socket, buffer, sizeof(int32_t));
@@ -675,23 +856,26 @@ bool handle_fstat(int socket, std::map<int, int> *descriptors)
     memcpy(&request.file_descriptor, buffer, sizeof(int32_t));
     free(buffer);
     struct mynfs_fstat_response response;
-    auto descr_check = (*descriptors).find(request.file_descriptor);
-    struct stat f_status;
-    if (descr_check != (*descriptors).end())
-    {
-        int file_descr = (*descriptors).find(request.file_descriptor)->second;
-        result = fstat(file_descr, &f_status);
-    }
-    else
+	struct stat f_status;
+
+	int file_descr;
+	file_descr = descriptors->find_element(request.file_descriptor);
+    if (file_descr == -1)
     {
         send_error_response(EBADF, socket);
         return false;
     }
+    else
+    {
+        result = fstat(file_descr, &f_status);
+    }
+
     if (result == -1)
     {
         send_error_response(errno, socket);
         return false;
     }
+
     response.return_value = result;
     buffer = (char *)malloc(sizeof(int16_t));
     memcpy(buffer, &response.return_value, sizeof(int16_t));
@@ -709,7 +893,7 @@ bool handle_fstat(int socket, std::map<int, int> *descriptors)
         return true;
     }
     buffer = (char *)malloc(sizeof(f_status));
-    memcpy(buffer, &response.file_stats, sizeof(f_status));
+    memcpy(buffer, &f_status, sizeof(f_status)); 
     result = write(socket, buffer, sizeof(f_status));
     free(buffer);
     if (result == 0)
@@ -736,11 +920,8 @@ void send_error_response(int error_code, int socket)
     free(buffer);
 }
 
-void close_all(std::map<int, int> *descriptors)
+//******************************************************************************************************************
+void close_all(DescriptorStorage *descriptor_list)
 {
-    for (auto i = (*descriptors).begin(); i != (*descriptors).end(); i++)
-    {
-        flock(i->second, LOCK_UN);
-        close(i->second);
-    }
+    descriptor_list->close_all_elements();
 }

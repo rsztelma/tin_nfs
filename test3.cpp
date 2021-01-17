@@ -5,11 +5,13 @@ int main()
 {
     int fds;
     char *tekst = (char *)malloc(sizeof(char)*50);
-    fds = mynfs_open((char *)"127.0.0.1", (char *)"mynfs_testing_plik.txt", O_RDONLY, 00666);
-    mynfs_read((char *)"127.0.0.1", fds, (void *)tekst, (strlen("Ala ma kota")+1)*sizeof(char));
-    mynfs_close((char *)"127.0.0.1", fds);
+    char *ip_addr = (char *)"127.0.0.1";
+    fds = mynfs_open(ip_addr, (char *)"mynfs_testing_plik.txt", O_RDONLY, 00666);
+    mynfs_read(ip_addr, fds, (void *)tekst, 45*sizeof(char));
+    mynfs_close(ip_addr, fds);
 
 	std::cout << tekst << std::endl;
+    std::cout << "test 3 finished" << '\n';
 
 	return 0;
 }
