@@ -33,6 +33,7 @@ extern int mynfs_error;                               //Kod błędu funkcji. War
                                                       //-5 --- błąd - serwer odzrucił połączenie
                                                       //-6 --- błąd - próba wykonania działania na serwerze, z którym nie zostało nawiązane połączenie
                                                       //-7 --- nieoczekiwane zakończenie połączenia z serwerem
+                                                      //-8 --- przekroczenie limitu otwartych plików na danym serwerze
 extern std::map<char *, int> mynfs_open_count;        //Tu przechowywana jest ilość otwartych plików na danym serwerze.
 extern std::map<char *, int> mynfs_socket_descriptor; //Tu przechowywany jest deskryptor gniazda połączonego z danym serwerem.
 
