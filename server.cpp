@@ -5,15 +5,15 @@
 #include <algorithm>
 
 void new_process(int fds);
-bool handle_open(int socket, std::map<int, int> descriptors);
-bool handle_read(int socket, std::map<int, int> descriptors);
-bool handle_write(int socket, std::map<int, int> descriptors);
-bool handle_lseek(int socket, std::map<int, int> descriptors);
-bool handle_close(int socket, std::map<int, int> descriptors);
-bool handle_unlink(int socket, std::map<int, int> descriptors);
-bool handle_fstat(int socket, std::map<int, int> descriptors);
+bool handle_open(int socket, std::map<int, int> *descriptors);
+bool handle_read(int socket, std::map<int, int> *descriptors);
+bool handle_write(int socket, std::map<int, int> *descriptors);
+bool handle_lseek(int socket, std::map<int, int> *descriptors);
+bool handle_close(int socket, std::map<int, int> *descriptors);
+bool handle_unlink(int socket, std::map<int, int> *descriptors);
+bool handle_fstat(int socket, std::map<int, int> *descriptors);
 void send_error_response(int error_code, int socket);
-void close_all(std::map<int, int> descriptors);
+void close_all(std::map<int, int> *descriptors);
 
 int main()
 {
@@ -93,7 +93,7 @@ void new_process(int socket)
         ssize_t result = read(socket, &function_id, sizeof(uint8_t));
         if (result == 0)
         {
-            close_all(descriptors);
+            close_all(&descriptors);
             break;
         }
         else if (result == -1)
@@ -104,31 +104,31 @@ void new_process(int socket)
         switch ((int)function_id)
         {
         case 1:
-            loop = handle_open(socket, descriptors);
+            loop = handle_open(socket, &descriptors);
             break;
 
         case 2:
-            loop = handle_read(socket, descriptors);
+            loop = handle_read(socket, &descriptors);
             break;
 
         case 3:
-            loop = handle_write(socket, descriptors);
+            loop = handle_write(socket, &descriptors);
             break;
 
         case 4:
-            loop = handle_lseek(socket, descriptors);
+            loop = handle_lseek(socket, &descriptors);
             break;
 
         case 5:
-            loop = handle_close(socket, descriptors);
+            loop = handle_close(socket, &descriptors);
             break;
 
         case 6:
-            loop = handle_unlink(socket, descriptors);
+            loop = handle_unlink(socket, &descriptors);
             break;
 
         case 7:
-            loop = handle_fstat(socket, descriptors);
+            loop = handle_fstat(socket, &descriptors);
             break;
 
         default:
@@ -143,7 +143,7 @@ void new_process(int socket)
     exit(0);
 }
 
-bool handle_open(int socket, std::map<int, int> descriptors)
+bool handle_open(int socket, std::map<int, int> *descriptors)
 {
     char *buffer = (char *)malloc(sizeof(int16_t));
     ssize_t result = read(socket, buffer, sizeof(int16_t));
@@ -206,7 +206,7 @@ bool handle_open(int socket, std::map<int, int> descriptors)
     if (file_descr == -1)
     {
         send_error_response(errno, socket);
-        if (descriptors.empty())
+        if ((*descriptors).empty())
         {
             return true;
         }
@@ -223,7 +223,7 @@ bool handle_open(int socket, std::map<int, int> descriptors)
     {
         close(file_descr);
         std::cerr << "Unsupported open mode";
-        if (descriptors.empty())
+        if ((*descriptors).empty())
         {
             return true;
         }
@@ -236,7 +236,7 @@ bool handle_open(int socket, std::map<int, int> descriptors)
     if (result == -1)
     {
         send_error_response(errno, socket);
-        if (descriptors.empty())
+        if ((*descriptors).empty())
         {
             return true;
         }
@@ -246,15 +246,15 @@ bool handle_open(int socket, std::map<int, int> descriptors)
         }
     }
     int32_t ret_val;
-    if (descriptors.empty())
+    if ((*descriptors).empty())
     {
         ret_val = 1;
-        descriptors[ret_val] = file_descr;
+        (*descriptors)[ret_val] = file_descr;
     }
     else
     {
-        ret_val = descriptors.rbegin()->first + 1;
-        descriptors[ret_val] = file_descr;
+        ret_val = (*descriptors).rbegin()->first + 1;
+        (*descriptors)[ret_val] = file_descr;
     }
     struct mynfs_open_response response;
     response.return_value = ret_val;
@@ -276,7 +276,7 @@ bool handle_open(int socket, std::map<int, int> descriptors)
     return false;
 }
 
-bool handle_read(int socket, std::map<int, int> descriptors)
+bool handle_read(int socket, std::map<int, int> *descriptors)
 {
     char *buffer = (char *)malloc(sizeof(int32_t));
     ssize_t result = read(socket, buffer, sizeof(int32_t));
@@ -311,10 +311,10 @@ bool handle_read(int socket, std::map<int, int> descriptors)
     free(buffer);
     struct mynfs_read_response response;
     void *buf = malloc(request.data_size);
-    auto descr_check = descriptors.find(request.file_descriptor);
-    if (descr_check != descriptors.end())
+    auto descr_check = (*descriptors).find(request.file_descriptor);
+    if (descr_check != (*descriptors).end())
     {
-        int file_descr = descriptors.find(request.file_descriptor)->second;
+        int file_descr = (*descriptors).find(request.file_descriptor)->second;
         result = read(file_descr, buf, request.data_size);
     }
     else
@@ -373,7 +373,7 @@ bool handle_read(int socket, std::map<int, int> descriptors)
     return false;
 }
 
-bool handle_write(int socket, std::map<int, int> descriptors)
+bool handle_write(int socket, std::map<int, int> *descriptors)
 {
 	char *buffer;
 	struct mynfs_write_request request;
@@ -416,10 +416,10 @@ bool handle_write(int socket, std::map<int, int> descriptors)
     }
 
     struct mynfs_write_response response;
-    auto descr_check = descriptors.find(request.file_descriptor);
-    if (descr_check != descriptors.end())
+    auto descr_check = (*descriptors).find(request.file_descriptor);
+    if (descr_check != (*descriptors).end())
     {
-        int file_descr = descriptors.find(request.file_descriptor)->second;
+        int file_descr = (*descriptors).find(request.file_descriptor)->second;
         result = write(file_descr, &request.data, request.data_size);
     }
     else
@@ -452,7 +452,7 @@ bool handle_write(int socket, std::map<int, int> descriptors)
     return false;
 }
 
-bool handle_lseek(int socket, std::map<int, int> descriptors)
+bool handle_lseek(int socket, std::map<int, int> *descriptors)
 {
     char *buffer = (char *)malloc(sizeof(int32_t));
     ssize_t result = read(socket, buffer, sizeof(int32_t));
@@ -499,10 +499,10 @@ bool handle_lseek(int socket, std::map<int, int> descriptors)
     memcpy(&request.whence, buffer, sizeof(int16_t));
     free(buffer);
     struct mynfs_lseek_response response;
-    auto descr_check = descriptors.find(request.file_descriptor);
-    if (descr_check != descriptors.end())
+    auto descr_check = (*descriptors).find(request.file_descriptor);
+    if (descr_check != (*descriptors).end())
     {
-        int file_descr = descriptors.find(request.file_descriptor)->second;
+        int file_descr = (*descriptors).find(request.file_descriptor)->second;
         result = lseek(file_descr, request.offset, request.whence);
     }
     else
@@ -535,7 +535,7 @@ bool handle_lseek(int socket, std::map<int, int> descriptors)
     return false;
 }
 
-bool handle_close(int socket, std::map<int, int> descriptors)
+bool handle_close(int socket, std::map<int, int> *descriptors)
 {
     char *buffer = (char *)malloc(sizeof(int32_t));
     ssize_t result = read(socket, buffer, sizeof(int32_t));
@@ -554,10 +554,10 @@ bool handle_close(int socket, std::map<int, int> descriptors)
     memcpy(&request.file_descriptor, buffer, sizeof(int32_t));
     free(buffer);
     struct mynfs_close_response response;
-    auto descr_check = descriptors.find(request.file_descriptor);
-    if (descr_check != descriptors.end())
+    auto descr_check = (*descriptors).find(request.file_descriptor);
+    if (descr_check != (*descriptors).end())
     {
-        int file_descr = descriptors.find(request.file_descriptor)->second;
+        int file_descr = (*descriptors).find(request.file_descriptor)->second;
         result = close(file_descr);
     }
     else
@@ -589,7 +589,7 @@ bool handle_close(int socket, std::map<int, int> descriptors)
     return false;
 }
 
-bool handle_unlink(int socket, std::map<int, int> descriptors)
+bool handle_unlink(int socket, std::map<int, int> *descriptors)
 {
     char *buffer = (char *)malloc(sizeof(int16_t));
     ssize_t result = read(socket, buffer, sizeof(int16_t));
@@ -627,7 +627,7 @@ bool handle_unlink(int socket, std::map<int, int> descriptors)
     if (result == -1)
     {
         send_error_response(errno, socket);
-        if (descriptors.empty())
+        if ((*descriptors).empty())
         {
             return true;
         }
@@ -656,7 +656,7 @@ bool handle_unlink(int socket, std::map<int, int> descriptors)
     return false;
 }
 
-bool handle_fstat(int socket, std::map<int, int> descriptors)
+bool handle_fstat(int socket, std::map<int, int> *descriptors)
 {
     char *buffer = (char *)malloc(sizeof(int32_t));
     ssize_t result = read(socket, buffer, sizeof(int32_t));
@@ -675,11 +675,11 @@ bool handle_fstat(int socket, std::map<int, int> descriptors)
     memcpy(&request.file_descriptor, buffer, sizeof(int32_t));
     free(buffer);
     struct mynfs_fstat_response response;
-    auto descr_check = descriptors.find(request.file_descriptor);
+    auto descr_check = (*descriptors).find(request.file_descriptor);
     struct stat f_status;
-    if (descr_check != descriptors.end())
+    if (descr_check != (*descriptors).end())
     {
-        int file_descr = descriptors.find(request.file_descriptor)->second;
+        int file_descr = (*descriptors).find(request.file_descriptor)->second;
         result = fstat(file_descr, &f_status);
     }
     else
@@ -736,9 +736,9 @@ void send_error_response(int error_code, int socket)
     free(buffer);
 }
 
-void close_all(std::map<int, int> descriptors)
+void close_all(std::map<int, int> *descriptors)
 {
-    for (auto i = descriptors.begin(); i != descriptors.end(); i++)
+    for (auto i = (*descriptors).begin(); i != (*descriptors).end(); i++)
     {
         flock(i->second, LOCK_UN);
         close(i->second);
