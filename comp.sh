@@ -10,5 +10,7 @@ g++ -c test4.cpp -o test4.o
 g++ -o test4 test4.o -L. -l_nfs
 g++ -c test5.cpp -o test5.o
 g++ -o test5 test5.o -L. -l_nfs
+g++ -c test6.cpp -o test6.o
+g++ -o test6 test6.o -L. -l_nfs
 g++ -c server.cpp -o server.o
 g++ -o server server.o -L. -l_nfs
