@@ -3,14 +3,15 @@
 int main()
 {
     int fds;
-    char *tekst = (char *)" wielkiego psa";
     char *ip_addr = (char *)"172.18.77.72";
-    std::cout << "test 2 - lseek i nadpisanie zawartosci na podanej pozycji" << '\n';
+    char *tekst = (char *)"Ala ma kota";
+    std::cout << "Test 6 - warinat 12 - blokowanie dostepu\n";
     fds = mynfs_open(ip_addr, (char *)"mynfs_testing_plik.txt", O_RDWR | O_CREAT, 00666);
-    mynfs_lseek(ip_addr, fds, 6, SEEK_SET);
     mynfs_write(ip_addr, fds, (void *)tekst, strlen(tekst));
+    std::cout << "Potwierdz zamkniecie pliku wciskajac przycisk enter\n";
+    getchar();
     mynfs_close(ip_addr, fds);
-	std::cout << "test 2 zakonczony" << '\n';
+	std::cout << "Test 6 zakonczony\n";
 
 	return 0;
 }
